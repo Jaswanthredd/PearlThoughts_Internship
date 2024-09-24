@@ -1,22 +1,25 @@
+# Use AWS provider
 provider "aws" {
-  region = "us-east-1"  # Change to your preferred region
+  region = var.aws_region
 }
 
+# ECS Cluster for Medusa
 resource "aws_ecs_cluster" "medusa_cluster" {
   name = "medusa-ecs-cluster"
 }
 
+# ECS Task Definition
 resource "aws_ecs_task_definition" "medusa_task" {
   family                   = "medusa-task"
   network_mode             = "awsvpc"
   requires_compatibilities = ["FARGATE"]
   cpu                      = "256"
   memory                   = "512"
-  execution_role_arn       = aws_iam_role.Jashu_ecs_task_execution_role.arn
+  execution_role_arn       = var.existing_ecs_task_execution_role_arn  # Use existing role ARN
 
   container_definitions = jsonencode([{
     name      = "medusa-container"
-    image     = "jaswanthreddi/medusa_app:latest"
+    image     = "jaswanthreddi/medusa-app:latest"
     essential = true
     portMappings = [{
       containerPort = 9000
@@ -36,6 +39,7 @@ resource "aws_ecs_task_definition" "medusa_task" {
   }])
 }
 
+# ECS Service for Medusa
 resource "aws_ecs_service" "medusa_service" {
   name            = "medusa-service"
   cluster         = aws_ecs_cluster.medusa_cluster.id
@@ -44,31 +48,13 @@ resource "aws_ecs_service" "medusa_service" {
   launch_type     = "FARGATE"
 
   network_configuration {
-    subnets         = [aws_subnet.public.id]
+    subnets         = var.existing_subnet_ids
     security_groups = [aws_security_group.ecs_sg.id]
     assign_public_ip = true
   }
 }
 
-resource "aws_iam_role" "Jashu_ecs_task_execution_role" {
-  name = "Jashu_ecsTaskExecutionRole"
-
-  assume_role_policy = jsonencode({
-    Version = "2012-10-17"
-    Statement = [{
-      Action = "sts:AssumeRole"
-      Effect = "Allow"
-      Principal = {
-        Service = "ecs-tasks.amazonaws.com"
-      }
-    }]
-  })
-
-  managed_policy_arns = [
-    "arn:aws:iam::aws:policy/service-role/AmazonECSTaskExecutionRolePolicy"
-  ]
-}
-
+# Security Group for ECS Fargate
 resource "aws_security_group" "ecs_sg" {
   name        = "ecs-sg"
   description = "Allow inbound traffic for Medusa ECS Fargate"
@@ -87,18 +73,6 @@ resource "aws_security_group" "ecs_sg" {
     cidr_blocks = ["0.0.0.0/0"]
   }
 
-  vpc_id = aws_vpc.main.id
+  vpc_id = var.existing_vpc_id
 }
 
-resource "aws_vpc" "main" {
-  cidr_block = "10.0.0.0/16"
-}
-
-resource "aws_subnet" "public" {
-  vpc_id     = aws_vpc.main.id
-  cidr_block = "10.0.1.0/24"
-}
-
-resource "aws_internet_gateway" "gw" {
-  vpc_id = aws_vpc.main.id
-}
